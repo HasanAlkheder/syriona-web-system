@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from database import SessionLocal, engine
+from database import Base, SessionLocal, engine
 from bootstrap import ensure_default_organization, ensure_demo_user
 from migrate_auth_schema import (
     ensure_auth_schema,
@@ -13,8 +13,15 @@ from migrate_auth_schema import (
     ensure_sentence_timing_columns,
 )
 from models.organization import Organization
-from models.translation_job import TranslationJob
 from models.user import User
+
+# Import modules so every model registers on Base before create_all (FK order).
+import models.character  # noqa: F401
+import models.episode  # noqa: F401
+import models.project  # noqa: F401
+import models.sentence  # noqa: F401
+import models.translation  # noqa: F401
+import models.translation_job  # noqa: F401
 from routers import (
     auth,
     sentences,
@@ -41,9 +48,8 @@ def ensure_schema_and_default_org():
     ensure_project_assignee_column(engine)
     ensure_episode_assignee_column(engine)
     ensure_sentence_timing_columns(engine)
-    Organization.__table__.create(bind=engine, checkfirst=True)
-    User.__table__.create(bind=engine, checkfirst=True)
-    TranslationJob.__table__.create(bind=engine, checkfirst=True)
+    # Create application tables in FK order (e.g. episodes before translation_jobs).
+    Base.metadata.create_all(bind=engine, checkfirst=True)
     db = SessionLocal()
     try:
         ensure_default_organization(db)

@@ -2,6 +2,7 @@
 /* eslint-disable react/prop-types -- internal form control */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { useFlipListboxPlacement } from "../hooks/useFlipListboxPlacement";
 
 export function memberLabel(u) {
   if (!u) return "—";
@@ -33,7 +34,15 @@ export default function AssigneeSelect({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
+  const triggerWrapRef = useRef(null);
   const sid = id || "assignee-select";
+  const listboxItemCount = (members?.length ?? 0) + 1;
+  const { flip: menuFlip, maxHeight: menuMaxHeight } = useFlipListboxPlacement(
+    open,
+    triggerWrapRef,
+    listboxItemCount,
+    220
+  );
   const selected = useMemo(
     () =>
       (members || []).find((m) => Number(m.id) === Number(value)) || null,
@@ -85,7 +94,7 @@ export default function AssigneeSelect({
           {label}
         </label>
       ) : null}
-      <div style={{ position: "relative", minWidth: 0 }}>
+      <div ref={triggerWrapRef} style={{ position: "relative", minWidth: 0 }}>
         <button
           id={sid}
           type="button"
@@ -163,9 +172,12 @@ export default function AssigneeSelect({
           <div
             role="listbox"
             aria-label={`${label || "Assignee"} options`}
+            className="syriona-light-scroll-y"
             style={{
               position: "absolute",
-              top: "calc(100% + 6px)",
+              ...(menuFlip
+                ? { bottom: "calc(100% + 6px)", top: "auto" }
+                : { top: "calc(100% + 6px)", bottom: "auto" }),
               left: 0,
               right: 0,
               zIndex: 250,
@@ -174,7 +186,7 @@ export default function AssigneeSelect({
               border: "1px solid #E2E8F0",
               boxShadow: "0 14px 36px rgba(15,23,42,0.12)",
               padding: "6px",
-              maxHeight: "220px",
+              maxHeight: menuMaxHeight,
               overflowY: "auto",
             }}
           >

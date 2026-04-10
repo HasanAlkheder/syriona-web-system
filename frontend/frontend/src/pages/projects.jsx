@@ -829,7 +829,7 @@ export default function ProjectsPage({
 
       {filteredProjects.length > 0 && projectsView === "kanban" && (
         <div
-          className="projects-kanban-board"
+          className="projects-kanban-board syriona-kanban-hscroll"
           style={kanbanBoard}
           role="region"
           aria-label="Projects by status"

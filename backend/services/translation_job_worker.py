@@ -45,6 +45,7 @@ def _translate_line_with_retries(
                 sentence,
                 episode_context_cache=episode_context_cache,
                 series_excerpt_cache=series_excerpt_cache,
+                prefer_bulk_model=True,
             )
             return
         except BaseException as e:

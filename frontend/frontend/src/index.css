@@ -321,6 +321,11 @@ a:hover {
   cursor: not-allowed;
 }
 
+/* Project episode list: avoid horizontal spill when dropdowns use fit-content */
+.episodes-list-shell {
+  min-width: 0;
+}
+
 .episodes-table {
   width: 100%;
   max-width: 100%;
@@ -345,6 +350,76 @@ a:hover {
 
 .episodes-table tbody tr.episodes-list-row:last-child td {
   border-bottom: none;
+}
+
+/* Kanban horizontal strip: light scrollbar (avoids heavy default / dark-themed bars on Windows) */
+.syriona-kanban-hscroll {
+  color-scheme: light;
+  scrollbar-width: thin;
+  scrollbar-color: #b8c0cc #f1f5f9;
+}
+
+.syriona-kanban-hscroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.syriona-kanban-hscroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 999px;
+  margin: 0 10px;
+}
+
+.syriona-kanban-hscroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #d8dde5, #c5ccd6);
+  border-radius: 999px;
+  border: 2px solid #f1f5f9;
+}
+
+.syriona-kanban-hscroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #c5ccd6, #aeb6c4);
+}
+
+.syriona-kanban-hscroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Project page — episode board: larger primary “Open” control */
+.episodes-kanban-board .projects-list-open-btn {
+  gap: 12px;
+  padding: 10px 10px 10px 20px;
+  font-size: 0.9rem;
+}
+
+.episodes-kanban-board .projects-list-open-btn-icon {
+  width: 34px;
+  height: 34px;
+}
+
+/* Vertical scroll (e.g. Characters table body) — same light treatment */
+.syriona-light-scroll-y {
+  color-scheme: light;
+  scrollbar-width: thin;
+  scrollbar-color: #b8c0cc #f1f5f9;
+}
+
+.syriona-light-scroll-y::-webkit-scrollbar {
+  width: 10px;
+}
+
+.syriona-light-scroll-y::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 999px;
+  margin: 6px 0;
+}
+
+.syriona-light-scroll-y::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #d8dde5, #c5ccd6);
+  border-radius: 999px;
+  border: 2px solid #f1f5f9;
+}
+
+.syriona-light-scroll-y::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #c5ccd6, #aeb6c4);
 }
 
 .visually-hidden {

@@ -13,6 +13,8 @@ import {
 
 import { apiFetch } from "../api/client";
 
+const DELETE_ALL_CONFIRM_PHRASE = "DELETE ALL";
+
 function rowKey(c) {
   if (c.isDraft) return `draft-${c._draftKey}`;
   return `id-${c.id}`;
@@ -85,6 +87,10 @@ export default function CharactersPage({ onNext, onBack, projectId }) {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
 
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
+  const [deleteAllPhrase, setDeleteAllPhrase] = useState("");
+  const [deleteAllLoading, setDeleteAllLoading] = useState(false);
+
   const editTargetRef = useRef(null);
   const editNameRef = useRef("");
   editTargetRef.current = editTarget;
@@ -131,6 +137,8 @@ export default function CharactersPage({ onNext, onBack, projectId }) {
       if (e.key !== "Escape") return;
       if (editTargetRef.current) closeEditModal();
       setDeleteTarget(null);
+      setDeleteAllOpen(false);
+      setDeleteAllPhrase("");
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
@@ -338,6 +346,44 @@ export default function CharactersPage({ onNext, onBack, projectId }) {
     }
   }
 
+  const deleteAllMatches =
+    deleteAllPhrase.trim().toUpperCase() === DELETE_ALL_CONFIRM_PHRASE;
+
+  async function confirmDeleteAll() {
+    if (!deleteAllMatches || deleteAllLoading || !projectId) return;
+    setDeleteAllLoading(true);
+    try {
+      const hasSaved = characters.some((c) => !c.isDraft);
+      if (hasSaved) {
+        const res = await apiFetch(`/characters/project/${projectId}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(
+            typeof err.detail === "string"
+              ? err.detail
+              : "Could not delete all characters"
+          );
+          return;
+        }
+        await fetchCharacters();
+      } else {
+        setCharacters([]);
+      }
+      setTagInputs({});
+      setDeleteTarget(null);
+      setDeleteConfirm("");
+      setEditTarget(null);
+      setDeleteAllOpen(false);
+      setDeleteAllPhrase("");
+    } catch (e) {
+      alert(e?.message || "Delete all failed");
+    } finally {
+      setDeleteAllLoading(false);
+    }
+  }
+
   const draftCount = characters.filter((c) => c.isDraft).length;
 
   return (
@@ -404,6 +450,28 @@ export default function CharactersPage({ onNext, onBack, projectId }) {
             <Save size={18} />
             {saving ? "Saving…" : "Save to project"}
           </button>
+          <button
+            type="button"
+            disabled={characters.length === 0 || saving || deleteAllLoading}
+            style={{
+              ...deleteAllBtn,
+              opacity:
+                characters.length === 0 || saving || deleteAllLoading
+                  ? 0.45
+                  : 1,
+              cursor:
+                characters.length === 0 || saving || deleteAllLoading
+                  ? "not-allowed"
+                  : "pointer",
+            }}
+            onClick={() => {
+              setDeleteAllPhrase("");
+              setDeleteAllOpen(true);
+            }}
+          >
+            <Trash2 size={18} />
+            Delete all
+          </button>
           {typeof onNext === "function" && (
             <button
               type="button"
@@ -424,7 +492,7 @@ export default function CharactersPage({ onNext, onBack, projectId }) {
           <div style={{ ...th, width: 108, textAlign: "right" }}>Actions</div>
         </div>
 
-        <div style={tableBody}>
+        <div className="syriona-light-scroll-y" style={tableBody}>
           {loading && (
             <div style={emptyState}>Loading characters…</div>
           )}
@@ -606,6 +674,57 @@ export default function CharactersPage({ onNext, onBack, projectId }) {
                   : editTarget.isDraft && !(editTarget.name || "").trim()
                     ? "Add"
                     : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete all modal */}
+      {deleteAllOpen && (
+        <div
+          style={modalOverlayDark}
+          onClick={() => !deleteAllLoading && setDeleteAllOpen(false)}
+        >
+          <div style={deleteCard} onClick={(e) => e.stopPropagation()}>
+            <div style={deleteIconWrap}>
+              <Trash2 size={26} color="#DC2626" />
+            </div>
+            <h3 style={deleteTitle}>Delete all characters?</h3>
+            <p style={deleteText}>
+              This removes every character for this project from the database,
+              including any unsaved rows still on this screen. Script matching
+              will no longer use these names until you add characters again.
+            </p>
+            <p style={deleteHint}>
+              Type <strong>{DELETE_ALL_CONFIRM_PHRASE}</strong> to confirm:
+            </p>
+            <input
+              value={deleteAllPhrase}
+              onChange={(e) => setDeleteAllPhrase(e.target.value)}
+              style={deleteInput}
+              placeholder={DELETE_ALL_CONFIRM_PHRASE}
+              autoComplete="off"
+            />
+            <div style={modalActions}>
+              <button
+                type="button"
+                style={btnNeutral}
+                disabled={deleteAllLoading}
+                onClick={() => {
+                  setDeleteAllOpen(false);
+                  setDeleteAllPhrase("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={btnDanger}
+                disabled={!deleteAllMatches || deleteAllLoading}
+                onClick={confirmDeleteAll}
+              >
+                {deleteAllLoading ? "Deleting…" : "Delete all"}
               </button>
             </div>
           </div>
@@ -806,6 +925,21 @@ const continueBtn = {
   fontWeight: 600,
   cursor: "pointer",
   fontSize: "0.9rem",
+};
+
+const deleteAllBtn = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "8px",
+  padding: "12px 18px",
+  borderRadius: "12px",
+  border: "2px solid #FECACA",
+  background: "#FFFBFB",
+  color: "#B91C1C",
+  fontWeight: 600,
+  fontSize: "0.9rem",
+  fontFamily: "inherit",
+  boxShadow: "0 1px 4px rgba(220,38,38,0.08)",
 };
 
 const tableWrap = {

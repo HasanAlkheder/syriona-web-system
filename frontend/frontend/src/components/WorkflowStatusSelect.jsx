@@ -1,6 +1,7 @@
 /* eslint-disable react/prop-types -- shared form control */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
+import { useFlipListboxPlacement } from "../hooks/useFlipListboxPlacement";
 
 /**
  * Custom status dropdown with optional left segment label (e.g. "STATUS" | value + chevron).
@@ -13,9 +14,17 @@ export default function WorkflowStatusSelect({
   segmentedPrefix,
   badgeStyleForValue,
   ariaLabel = "Status",
+  /** Larger trigger (e.g. project episode Kanban cards). */
+  comfortable = false,
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
+  const { flip: menuFlip, maxHeight: menuMaxHeight } = useFlipListboxPlacement(
+    open,
+    rootRef,
+    options.length,
+    260
+  );
 
   const current = useMemo(
     () =>
@@ -87,10 +96,12 @@ export default function WorkflowStatusSelect({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: "8px",
+                gap: comfortable ? "10px" : "8px",
                 borderRadius: "999px",
-                padding: "5px 22px 5px 12px",
-                fontSize: "0.68rem",
+                padding: comfortable
+                  ? "8px 24px 8px 14px"
+                  : "5px 22px 5px 12px",
+                fontSize: comfortable ? "0.84rem" : "0.68rem",
                 fontWeight: 700,
                 letterSpacing: "0.02em",
                 boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
@@ -152,7 +163,7 @@ export default function WorkflowStatusSelect({
               {current?.label ?? "—"}
             </span>
             <ChevronDown
-              size={16}
+              size={comfortable ? 18 : 16}
               style={{
                 flexShrink: 0,
                 opacity: 0.8,
@@ -168,10 +179,12 @@ export default function WorkflowStatusSelect({
         <div
           role="listbox"
           aria-label={ariaLabel}
-          className="wf-status-select-menu"
+          className="wf-status-select-menu syriona-light-scroll-y"
           style={{
             position: "absolute",
-            top: "calc(100% + 6px)",
+            ...(menuFlip
+              ? { bottom: "calc(100% + 6px)", top: "auto" }
+              : { top: "calc(100% + 6px)", bottom: "auto" }),
             left: 0,
             minWidth: "100%",
             zIndex: 280,
@@ -180,7 +193,7 @@ export default function WorkflowStatusSelect({
             border: "1px solid #E2E8F0",
             boxShadow: "0 14px 36px rgba(15,23,42,0.12)",
             padding: "6px",
-            maxHeight: "260px",
+            maxHeight: menuMaxHeight,
             overflowY: "auto",
           }}
         >

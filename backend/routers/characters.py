@@ -32,6 +32,23 @@ def get_characters(
     return result
 
 
+@router.delete("/project/{project_id}")
+def delete_all_characters_for_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Remove every character row for this project (org-scoped)."""
+    require_project_in_org(db, project_id, user.organization_id)
+    deleted = (
+        db.query(Character)
+        .filter(Character.project_id == project_id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"ok": True, "deleted": deleted}
+
+
 @router.post("/")
 def create_characters(
     chars: list[CharacterCreate],

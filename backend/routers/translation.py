@@ -75,7 +75,7 @@ def translate_free(req: FreeTranslateRequest):
 
     return {
         "translation": out,
-        "model": "gpt-5.4",
+        "model": OPENAI_TRANSLATION_MODEL,
         "source_language": req.source_language,
         "target_language": req.target_language,
     }
@@ -193,7 +193,10 @@ def process_chunk(sentence_ids):
     episode_context_cache = {}
     for s in sentences:
         translate_and_save_sentence(
-            db, s, episode_context_cache=episode_context_cache
+            db,
+            s,
+            episode_context_cache=episode_context_cache,
+            prefer_bulk_model=True,
         )
 
     db.commit()
@@ -339,7 +342,10 @@ def translate_episode(episode_id: int, db: Session = Depends(get_db)):
 
     for s in sentences:
         translate_and_save_sentence(
-            db, s, episode_context_cache=episode_context_cache
+            db,
+            s,
+            episode_context_cache=episode_context_cache,
+            prefer_bulk_model=True,
         )
         # Latest translation text is not returned here; count only.
         results.append(True)

@@ -8,6 +8,12 @@ import {
   Pencil,
   Trash2,
   ArrowUpRight,
+  List,
+  Kanban,
+  GripVertical,
+  ClipboardList,
+  Calendar,
+  UserRound,
 } from "lucide-react";
 
 import { apiFetch } from "../api/client";
@@ -19,6 +25,7 @@ import {
   projectStatusBadgeStyle,
   episodeStatusBadgeStyle,
   formatProjectListDate,
+  formatProjectDate,
 } from "./projects";
 
 const ACCENTS = [
@@ -27,6 +34,41 @@ const ACCENTS = [
   { bar: "#DB2777", soft: "#FCE7F3", icon: "#BE185D" },
   { bar: "#EA580C", soft: "#FFEDD5", icon: "#C2410C" },
 ];
+
+const EPISODES_VIEW_STORAGE_PREFIX = "syriona-project-episodes-view-";
+
+function readStoredEpisodesView(projectId) {
+  try {
+    const v = localStorage.getItem(`${EPISODES_VIEW_STORAGE_PREFIX}${projectId}`);
+    return v === "kanban" ? "kanban" : "list";
+  } catch {
+    return "list";
+  }
+}
+
+/** Board columns: New doubles as “not started” (no separate column). */
+const EPISODE_KANBAN_COLUMNS = [
+  { value: "new", label: "New" },
+  { value: "in_progress", label: "In progress" },
+  { value: "done", label: "Done" },
+  { value: "on_hold", label: "On hold" },
+];
+
+const EPISODE_KANBAN_DOT = {
+  new: "#6366F1",
+  in_progress: "#CA8A04",
+  done: "#16A34A",
+  on_hold: "#EA580C",
+};
+
+function episodeKanbanBucketKey(status) {
+  const s = String(status ?? "not_started").trim();
+  if (s === "not_started") return "new";
+  if (s === "new" || s === "in_progress" || s === "done" || s === "on_hold") {
+    return s;
+  }
+  return "new";
+}
 
 export default function ProjectPage({
   projectId,
@@ -60,6 +102,11 @@ export default function ProjectPage({
   const [orgMembers, setOrgMembers] = useState([]);
   const [assigneeSaving, setAssigneeSaving] = useState(false);
   const [episodeAssigneeSavingId, setEpisodeAssigneeSavingId] = useState(null);
+
+  const [episodesView, setEpisodesView] = useState(() =>
+    readStoredEpisodesView(projectId)
+  );
+  const [episodeKanbanDragOver, setEpisodeKanbanDragOver] = useState(null);
 
   const nextEpisodePreviewStart = useMemo(() => {
     const nums = episodes.map((e) => Number(e.episode_number) || 0);
@@ -113,6 +160,21 @@ export default function ProjectPage({
   }, [loadData]);
 
   useEffect(() => {
+    setEpisodesView(readStoredEpisodesView(projectId));
+  }, [projectId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        `${EPISODES_VIEW_STORAGE_PREFIX}${projectId}`,
+        episodesView
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [projectId, episodesView]);
+
+  useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
@@ -149,6 +211,37 @@ export default function ProjectPage({
       );
     });
   }, [episodes, headerSearchQuery, orgMembers]);
+
+  const displayedEpisodesByStatus = useMemo(() => {
+    const map = {
+      new: [],
+      in_progress: [],
+      done: [],
+      on_hold: [],
+    };
+    for (const ep of displayedEpisodes) {
+      map[episodeKanbanBucketKey(ep.status)].push(ep);
+    }
+    return map;
+  }, [displayedEpisodes]);
+
+  function beginEpisodeKanbanDrag(e, ep) {
+    if (episodeStatusSavingId === ep.id) {
+      e.preventDefault();
+      return;
+    }
+    if (
+      e.target.closest(
+        "button, select, input, textarea, a[href], option, label, [role='listbox'], [role='option']"
+      )
+    ) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData("application/x-syriona-episode", String(ep.id));
+    e.dataTransfer.setData("text/plain", String(ep.id));
+    e.dataTransfer.effectAllowed = "move";
+  }
 
   useEffect(() => {
     function onEsc(e) {
@@ -392,6 +485,14 @@ export default function ProjectPage({
     }
   }
 
+  async function handleEpisodeKanbanDrop(episodeIdRaw, nextStatus) {
+    const id = Number(episodeIdRaw);
+    if (!Number.isFinite(id)) return;
+    const ep = episodes.find((e) => e.id === id);
+    if (!ep) return;
+    await handleEpisodeStatusQuickChange(ep, nextStatus);
+  }
+
   if (loading && !project) {
     return (
       <div style={loadingWrap}>
@@ -498,27 +599,59 @@ export default function ProjectPage({
       </header>
 
       <section style={sectionLabel}>
-        <h2 style={sectionTitle}>Episodes</h2>
-        <span style={sectionCount}>
-          {headerSearchQuery.trim()
-            ? `${displayedEpisodes.length} shown · ${episodes.length} total`
-            : `${episodes.length} total`}
-        </span>
+        <div style={sectionLabelLeft}>
+          <h2 style={sectionTitle}>Episodes</h2>
+          <span style={sectionCount}>
+            {headerSearchQuery.trim()
+              ? `${displayedEpisodes.length} shown · ${episodes.length} total`
+              : `${episodes.length} total`}
+          </span>
+        </div>
+        {episodes.length > 0 ? (
+          <div style={epViewToggleWrap} role="group" aria-label="Episodes layout">
+            <button
+              type="button"
+              style={{
+                ...epViewToggleBtn,
+                ...(episodesView === "list" ? epViewToggleBtnActive : {}),
+              }}
+              onClick={() => setEpisodesView("list")}
+              title="List view"
+              aria-pressed={episodesView === "list"}
+            >
+              <List size={18} strokeWidth={2} aria-hidden />
+              <span style={epViewToggleLabel}>List</span>
+            </button>
+            <button
+              type="button"
+              style={{
+                ...epViewToggleBtn,
+                ...(episodesView === "kanban" ? epViewToggleBtnActive : {}),
+              }}
+              onClick={() => setEpisodesView("kanban")}
+              title="Board view"
+              aria-pressed={episodesView === "kanban"}
+            >
+              <Kanban size={18} strokeWidth={2} aria-hidden />
+              <span style={epViewToggleLabel}>Board</span>
+            </button>
+          </div>
+        ) : null}
       </section>
 
-      {displayedEpisodes.length > 0 && (
-        <div style={epListShell}>
+      {displayedEpisodes.length > 0 && episodesView === "list" && (
+        <div className="episodes-list-shell" style={epListShell}>
           <table
             className="episodes-table"
             style={epListTable}
             aria-label="Episodes list"
           >
             <colgroup>
-              <col style={{ width: "30%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "22%" }} />
-              <col style={{ width: "17%" }} />
-              <col style={{ width: "15%" }} />
+              <col style={{ width: "36%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "14%" }} />
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "20%" }} />
             </colgroup>
             <thead>
               <tr>
@@ -568,39 +701,44 @@ export default function ProjectPage({
                       </div>
                     </td>
                     <td style={epTdMid}>
-                      <WorkflowStatusSelect
-                        value={ep.status ?? "not_started"}
-                        options={EPISODE_STATUS_OPTIONS}
-                        onChange={(v) =>
-                          handleEpisodeStatusQuickChange(ep, v)
-                        }
-                        disabled={episodeStatusSavingId === ep.id}
-                        badgeStyleForValue={(v) => episodeStatusBadgeStyle(v)}
-                        ariaLabel={`Status for ${ep.title || "episode"}`}
-                      />
+                      <div style={epListStatusCellInner}>
+                        <WorkflowStatusSelect
+                          value={ep.status ?? "not_started"}
+                          options={EPISODE_STATUS_OPTIONS}
+                          onChange={(v) =>
+                            handleEpisodeStatusQuickChange(ep, v)
+                          }
+                          disabled={episodeStatusSavingId === ep.id}
+                          badgeStyleForValue={(v) => episodeStatusBadgeStyle(v)}
+                          ariaLabel={`Status for ${ep.title || "episode"}`}
+                        />
+                      </div>
                     </td>
                     <td style={epTdMid}>
-                      <AssigneeSelect
-                        id={`ep-assign-${ep.id}`}
-                        label={null}
-                        hideLabel
-                        value={ep.assigned_to_user_id}
-                        members={orgMembers}
-                        onChange={(uid) =>
-                          handleEpisodeAssigneeQuickChange(ep, uid)
-                        }
-                        disabled={episodeAssigneeSavingId === ep.id}
-                        style={{ gap: 0 }}
-                        selectStyle={{
-                          ...epListAssigneeSelect,
-                          opacity:
-                            episodeAssigneeSavingId === ep.id ? 0.65 : 1,
-                          cursor:
-                            episodeAssigneeSavingId === ep.id
-                              ? "wait"
-                              : "pointer",
-                        }}
-                      />
+                      <div style={epListAssignCellInner}>
+                        <AssigneeSelect
+                          id={`ep-assign-${ep.id}`}
+                          label={null}
+                          hideLabel
+                          value={ep.assigned_to_user_id}
+                          members={orgMembers}
+                          onChange={(uid) =>
+                            handleEpisodeAssigneeQuickChange(ep, uid)
+                          }
+                          disabled={episodeAssigneeSavingId === ep.id}
+                          style={{ gap: 0 }}
+                          selectStyle={{
+                            ...epListAssigneeSelect,
+                            minWidth: 0,
+                            opacity:
+                              episodeAssigneeSavingId === ep.id ? 0.65 : 1,
+                            cursor:
+                              episodeAssigneeSavingId === ep.id
+                                ? "wait"
+                                : "pointer",
+                          }}
+                        />
+                      </div>
                     </td>
                     <td style={epTdMid}>
                       <div style={epListDatesStack}>
@@ -667,6 +805,252 @@ export default function ProjectPage({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {displayedEpisodes.length > 0 && episodesView === "kanban" && (
+        <div
+          className="episodes-kanban-board syriona-kanban-hscroll"
+          style={epKanbanBoard}
+          role="region"
+          aria-label="Episodes by status"
+        >
+          {EPISODE_KANBAN_COLUMNS.map((col) => {
+            const colEps = displayedEpisodesByStatus[col.value] || [];
+            const isOver = episodeKanbanDragOver === col.value;
+            return (
+              <div
+                key={col.value}
+                style={{
+                  ...epKanbanColumn,
+                  ...(isOver ? epKanbanColumnDragOver : {}),
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  setEpisodeKanbanDragOver(col.value);
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget)) {
+                    setEpisodeKanbanDragOver(null);
+                  }
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setEpisodeKanbanDragOver(null);
+                  const raw =
+                    e.dataTransfer.getData("application/x-syriona-episode") ||
+                    e.dataTransfer.getData("text/plain");
+                  handleEpisodeKanbanDrop(raw, col.value);
+                }}
+              >
+                <div style={epKanbanColumnHeader}>
+                  <div style={epKanbanColumnHeaderLeft}>
+                    <GripVertical
+                      size={14}
+                      color="#A1A1AA"
+                      style={{ flexShrink: 0, opacity: 0.9 }}
+                      aria-hidden
+                    />
+                    <span
+                      style={{
+                        ...epKanbanColumnDot,
+                        background:
+                          EPISODE_KANBAN_DOT[col.value] || "#A1A1AA",
+                      }}
+                      aria-hidden
+                    />
+                    <span style={epKanbanColumnTitle}>{col.label}</span>
+                  </div>
+                  <span style={epKanbanColumnCountBadge}>
+                    {colEps.length}
+                  </span>
+                </div>
+                <div style={epKanbanColumnBody}>
+                  {colEps.length === 0 ? (
+                    <p style={epKanbanColumnEmpty}>Drop an episode here</p>
+                  ) : (
+                    colEps.map((ep) => {
+                      const saving = episodeStatusSavingId === ep.id;
+                      const accent = ACCENTS[Number(ep.id) % ACCENTS.length];
+                      const updatedRaw =
+                        ep.updated_at != null ? ep.updated_at : ep.created_at;
+                      return (
+                        <div
+                          key={ep.id}
+                          draggable={!saving}
+                          onDragStart={(e) => beginEpisodeKanbanDrag(e, ep)}
+                          onDragEnd={() => setEpisodeKanbanDragOver(null)}
+                          title={
+                            saving
+                              ? undefined
+                              : "Drag to change status column"
+                          }
+                          style={{
+                            ...epKanbanCard,
+                            opacity: saving ? 0.72 : 1,
+                            cursor: saving ? "wait" : "grab",
+                          }}
+                        >
+                          <div aria-hidden style={epKanbanCardGrip}>
+                            <GripVertical size={20} color="#A1A1AA" />
+                          </div>
+                          <div style={epKanbanCardMain}>
+                            <div style={epKanbanCardTitleRow}>
+                              <div
+                                style={{
+                                  ...epKanbanCardIcon,
+                                  background: accent.soft,
+                                  color: accent.icon,
+                                }}
+                                aria-hidden
+                              >
+                                <Film size={18} strokeWidth={2} />
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <h3 style={epKanbanCardName}>
+                                  {ep.title || "Untitled"}
+                                </h3>
+                                <p style={epKanbanCardEpNum}>
+                                  Episode {ep.episode_number ?? "—"}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div style={epKanbanMetaRow}>
+                              <ClipboardList
+                                size={17}
+                                color="#A1A1AA"
+                                style={epKanbanMetaIcon}
+                                strokeWidth={2}
+                                aria-hidden
+                              />
+                              <span style={epKanbanMetaLabel}>Status</span>
+                              <div style={epKanbanMetaValueCell}>
+                                <WorkflowStatusSelect
+                                  value={ep.status ?? "not_started"}
+                                  options={EPISODE_STATUS_OPTIONS}
+                                  onChange={(v) =>
+                                    handleEpisodeStatusQuickChange(ep, v)
+                                  }
+                                  disabled={saving}
+                                  comfortable
+                                  badgeStyleForValue={(v) =>
+                                    episodeStatusBadgeStyle(v)
+                                  }
+                                  ariaLabel={`Status for ${ep.title || "episode"}`}
+                                />
+                              </div>
+                            </div>
+
+                            <div style={epKanbanMetaRow}>
+                              <Calendar
+                                size={17}
+                                color="#A1A1AA"
+                                style={epKanbanMetaIcon}
+                                strokeWidth={2}
+                                aria-hidden
+                              />
+                              <span style={epKanbanMetaLabel}>Updated</span>
+                              <span
+                                style={epKanbanMetaValueText}
+                                title={formatProjectDate(updatedRaw)}
+                              >
+                                {formatProjectListDate(updatedRaw)}
+                              </span>
+                            </div>
+
+                            <div style={epKanbanCardFooter}>
+                              <UserRound
+                                size={17}
+                                color="#A1A1AA"
+                                style={epKanbanMetaIcon}
+                                strokeWidth={2}
+                                aria-hidden
+                              />
+                              <div style={epKanbanCardFooterAssignee}>
+                                <AssigneeSelect
+                                  id={`ep-kanban-assign-${ep.id}`}
+                                  label={null}
+                                  hideLabel
+                                  value={ep.assigned_to_user_id}
+                                  members={orgMembers}
+                                  onChange={(uid) =>
+                                    handleEpisodeAssigneeQuickChange(ep, uid)
+                                  }
+                                  disabled={
+                                    episodeAssigneeSavingId === ep.id ||
+                                    saving
+                                  }
+                                  style={{ gap: 0 }}
+                                  selectStyle={{
+                                    ...epKanbanAssigneeSelect,
+                                    opacity:
+                                      episodeAssigneeSavingId === ep.id
+                                        ? 0.65
+                                        : 1,
+                                    cursor:
+                                      episodeAssigneeSavingId === ep.id
+                                        ? "wait"
+                                        : "pointer",
+                                  }}
+                                />
+                              </div>
+                              <span
+                                style={epKanbanFooterDate}
+                                title={formatProjectDate(updatedRaw)}
+                              >
+                                {formatProjectListDate(updatedRaw)}
+                              </span>
+                            </div>
+
+                            <div style={epKanbanCardActions}>
+                              <button
+                                type="button"
+                                className="projects-list-open-btn"
+                                onClick={() => onOpenEpisode?.(ep.id)}
+                              >
+                                <span className="projects-list-open-btn-label">
+                                  Open
+                                </span>
+                                <span
+                                  className="projects-list-open-btn-icon"
+                                  aria-hidden
+                                >
+                                  <ArrowUpRight size={17} strokeWidth={2.35} />
+                                </span>
+                              </button>
+                              <button
+                                type="button"
+                                className="projects-list-ghost-btn"
+                                style={epKanbanRowIconBtn}
+                                title="Rename"
+                                onClick={() => openEdit(ep)}
+                              >
+                                <Pencil size={17} />
+                              </button>
+                              <button
+                                type="button"
+                                className="projects-list-ghost-btn projects-list-ghost-btn--danger"
+                                style={epKanbanRowIconBtnDanger}
+                                title="Delete episode"
+                                onClick={() => {
+                                  setDeleteEp(ep);
+                                  setDeleteConfirm("");
+                                }}
+                              >
+                                <Trash2 size={17} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -936,10 +1320,263 @@ export default function ProjectPage({
   );
 }
 
+const epKanbanBoard = {
+  display: "flex",
+  gap: "16px",
+  alignItems: "flex-start",
+  overflowX: "auto",
+  padding: "16px 14px 18px",
+  marginBottom: "8px",
+  borderRadius: "16px",
+  background: "#F4F4F5",
+  border: "1px solid #E4E4E7",
+  WebkitOverflowScrolling: "touch",
+};
+
+const epKanbanColumn = {
+  flex: "1 1 0",
+  minWidth: "min(100%, 280px)",
+  borderRadius: "14px",
+  background: "#EBEBEC",
+  border: "1px solid #DCDCDE",
+  overflow: "hidden",
+  display: "flex",
+  flexDirection: "column",
+  maxHeight: "min(78vh, 880px)",
+  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.65)",
+};
+
+const epKanbanColumnDragOver = {
+  borderColor: "#3B82F6",
+  background: "#E8EEF9",
+  boxShadow:
+    "inset 0 1px 0 rgba(255,255,255,0.65), 0 0 0 2px rgba(59, 130, 246, 0.35)",
+};
+
+const epKanbanColumnHeader = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "12px",
+  padding: "14px 16px 12px",
+  borderBottom: "1px solid rgba(0, 0, 0, 0.06)",
+  background:
+    "linear-gradient(180deg, rgba(255,255,255,0.5) 0%, transparent 100%)",
+};
+
+const epKanbanColumnHeaderLeft = {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  minWidth: 0,
+  flex: "1 1 auto",
+};
+
+const epKanbanColumnDot = {
+  width: "12px",
+  height: "12px",
+  borderRadius: "4px",
+  flexShrink: 0,
+  boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.06)",
+};
+
+const epKanbanColumnTitle = {
+  fontSize: "0.8rem",
+  fontWeight: 800,
+  letterSpacing: "0.06em",
+  textTransform: "uppercase",
+  color: "#3F3F46",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+const epKanbanColumnCountBadge = {
+  fontSize: "0.78rem",
+  fontWeight: 800,
+  fontVariantNumeric: "tabular-nums",
+  color: "#52525B",
+  background: "#FFFFFF",
+  border: "1px solid #D4D4D8",
+  borderRadius: "999px",
+  padding: "5px 11px",
+  lineHeight: 1.2,
+  flexShrink: 0,
+};
+
+const epKanbanColumnBody = {
+  flex: 1,
+  overflowY: "auto",
+  padding: "14px 12px 16px",
+  display: "flex",
+  flexDirection: "column",
+  gap: "12px",
+  minHeight: "160px",
+};
+
+const epKanbanColumnEmpty = {
+  margin: "28px 14px",
+  fontSize: "0.9rem",
+  color: "#A1A1AA",
+  textAlign: "center",
+  lineHeight: 1.45,
+  fontWeight: 500,
+};
+
+const epKanbanCard = {
+  display: "flex",
+  gap: "10px",
+  alignItems: "flex-start",
+  background: "#FFFFFF",
+  borderRadius: "12px",
+  border: "1px solid #E4E4E7",
+  padding: "16px 16px 16px 10px",
+  boxShadow: "0 1px 3px rgba(0, 0, 0, 0.06)",
+};
+
+const epKanbanCardGrip = {
+  flexShrink: 0,
+  padding: "2px 0 0",
+  borderRadius: "6px",
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "center",
+  alignSelf: "stretch",
+};
+
+const epKanbanCardMain = {
+  flex: 1,
+  minWidth: 0,
+  display: "flex",
+  flexDirection: "column",
+  gap: "10px",
+};
+
+const epKanbanCardTitleRow = {
+  display: "flex",
+  alignItems: "flex-start",
+  gap: "12px",
+};
+
+const epKanbanCardIcon = {
+  width: "40px",
+  height: "40px",
+  borderRadius: "10px",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  flexShrink: 0,
+};
+
+const epKanbanCardName = {
+  margin: 0,
+  fontSize: "1.05rem",
+  fontWeight: 700,
+  color: "#18181B",
+  lineHeight: 1.35,
+  wordBreak: "break-word",
+};
+
+const epKanbanCardEpNum = {
+  margin: "6px 0 0",
+  fontSize: "0.82rem",
+  fontWeight: 600,
+  color: "#94A3B8",
+  letterSpacing: "0.03em",
+};
+
+const epKanbanMetaRow = {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  width: "100%",
+  minWidth: 0,
+};
+
+const epKanbanMetaIcon = {
+  flexShrink: 0,
+  marginTop: "1px",
+};
+
+const epKanbanMetaLabel = {
+  flex: "0 0 72px",
+  fontSize: "0.72rem",
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.06em",
+  color: "#A1A1AA",
+  lineHeight: 1.2,
+};
+
+const epKanbanMetaValueCell = {
+  flex: 1,
+  minWidth: 0,
+  display: "flex",
+  justifyContent: "flex-end",
+};
+
+const epKanbanMetaValueText = {
+  flex: 1,
+  minWidth: 0,
+  fontSize: "0.88rem",
+  fontWeight: 600,
+  color: "#52525B",
+  textAlign: "right",
+  lineHeight: 1.35,
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+};
+
+const epKanbanCardFooter = {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  marginTop: "6px",
+  paddingTop: "14px",
+  borderTop: "1px solid #F4F4F5",
+};
+
+const epKanbanCardFooterAssignee = {
+  flex: 1,
+  minWidth: 0,
+};
+
+const epKanbanFooterDate = {
+  flexShrink: 0,
+  fontSize: "0.82rem",
+  fontWeight: 600,
+  color: "#71717A",
+  whiteSpace: "nowrap",
+};
+
+const epKanbanAssigneeSelect = {
+  width: "100%",
+  maxWidth: "100%",
+  minWidth: "0",
+  boxSizing: "border-box",
+  padding: "8px 26px 8px 10px",
+  fontSize: "0.88rem",
+  fontWeight: 600,
+  borderRadius: "10px",
+};
+
+const epKanbanCardActions = {
+  display: "flex",
+  alignItems: "center",
+  flexWrap: "wrap",
+  gap: "10px",
+  marginTop: "4px",
+  paddingTop: "14px",
+  borderTop: "1px solid #F4F4F5",
+};
+
 const pageWrap = {
-  maxWidth: "1100px",
+  width: "100%",
+  maxWidth: "1680px",
   margin: "0 auto",
-  padding: "8px 4px 40px",
+  padding: "8px clamp(12px, 2.5vw, 40px) 48px",
+  boxSizing: "border-box",
 };
 
 const loadingWrap = {
@@ -980,7 +1617,7 @@ const hero = {
 const heroMain = { flex: "1 1 280px", minWidth: 0 };
 
 const title = {
-  fontSize: "1.55rem",
+  fontSize: "1.75rem",
   fontWeight: 800,
   color: "#0F172A",
   margin: 0,
@@ -1090,23 +1727,70 @@ const secondaryButton = {
 
 const sectionLabel = {
   display: "flex",
-  alignItems: "baseline",
+  alignItems: "center",
   justifyContent: "space-between",
+  flexWrap: "wrap",
+  gap: "12px 16px",
   marginBottom: "16px",
   padding: "0 4px",
 };
 
+const sectionLabelLeft = {
+  display: "flex",
+  alignItems: "baseline",
+  gap: "12px",
+  flexWrap: "wrap",
+  minWidth: 0,
+};
+
 const sectionTitle = {
   margin: 0,
-  fontSize: "1.15rem",
+  fontSize: "1.28rem",
   fontWeight: 700,
   color: "#0F172A",
 };
 
 const sectionCount = {
-  fontSize: "0.85rem",
+  fontSize: "0.92rem",
   color: "#94A3B8",
   fontWeight: 600,
+};
+
+const epViewToggleWrap = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+  padding: "4px",
+  borderRadius: "12px",
+  background: "#FFFFFF",
+  border: "1px solid #E2E8F0",
+  flexShrink: 0,
+};
+
+const epViewToggleBtn = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "6px",
+  padding: "8px 12px",
+  borderRadius: "9px",
+  border: "1px solid transparent",
+  background: "transparent",
+  color: "#64748B",
+  fontSize: "0.82rem",
+  fontWeight: 600,
+  cursor: "pointer",
+  fontFamily: "inherit",
+};
+
+const epViewToggleBtnActive = {
+  background: "#EEF2FF",
+  color: "#3730A3",
+  borderColor: "#C7D2FE",
+  boxShadow: "0 1px 2px rgba(67, 56, 202, 0.12)",
+};
+
+const epViewToggleLabel = {
+  lineHeight: 1,
 };
 
 const epListShell = {
@@ -1114,10 +1798,21 @@ const epListShell = {
   borderRadius: "16px",
   border: "1px solid #E2E8F0",
   boxShadow: "0 1px 3px rgba(15, 23, 42, 0.06)",
-  overflowX: "hidden",
+  /* overflow-x: hidden forces overflow-y to clip in CSS; that cuts off dropdowns */
+  overflow: "visible",
   maxWidth: "100%",
   padding: "0 8px 0 10px",
   boxSizing: "border-box",
+};
+
+const epListStatusCellInner = {
+  width: "100%",
+  maxWidth: "168px",
+};
+
+const epListAssignCellInner = {
+  width: "100%",
+  maxWidth: "176px",
 };
 
 const epListTable = {
@@ -1295,6 +1990,18 @@ const epRowIconBtnDanger = {
   justifyContent: "center",
   fontFamily: "inherit",
   boxShadow: "0 1px 2px rgba(220,38,38,0.06)",
+};
+
+const epKanbanRowIconBtn = {
+  ...epRowIconBtn,
+  padding: "10px 12px",
+  borderRadius: "12px",
+};
+
+const epKanbanRowIconBtnDanger = {
+  ...epRowIconBtnDanger,
+  padding: "10px 12px",
+  borderRadius: "12px",
 };
 
 const emptyBox = {

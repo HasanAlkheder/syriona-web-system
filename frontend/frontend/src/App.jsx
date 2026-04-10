@@ -126,6 +126,7 @@ function App() {
         />
 
         <main
+          className="syriona-light-scroll-y"
           style={{
             flex: 1,
             minWidth: 0,
@@ -137,12 +138,13 @@ function App() {
             overflowX: "hidden",
             overflowY: "auto",
             WebkitOverflowScrolling: "touch",
+            colorScheme: "light",
           }}
         >
 
           <div
             style={{
-              maxWidth: "1600px",
+              maxWidth: "1680px",
               width: "100%",
               margin: "0 auto",
               minWidth: 0,
